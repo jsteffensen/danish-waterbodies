@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Danish Waterbodies</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Georgia', serif;
+      background: #0d1b2a;
+      color: #e8f4f8;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 24px;
+      background: #0d1b2a;
+      border-bottom: 1px solid #1e3a5f;
+      z-index: 1000;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 1.2rem;
+      font-weight: normal;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7ec8e3;
+    }
+
+    header h1 span {
+      color: #e8f4f8;
+      opacity: 0.5;
+      margin: 0 8px;
+    }
+
+    #status {
+      margin-left: auto;
+      font-size: 0.8rem;
+      color: #7ec8e3;
+      opacity: 0.7;
+      letter-spacing: 0.04em;
+    }
+
+    #map {
+      flex: 1;
+    }
+
+    /* Loading overlay */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: #0d1b2a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      gap: 20px;
+      transition: opacity 0.6s ease;
+    }
+
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: auto;
+      cursor: default;
+    }
+
+    .loader-wave {
+      display: flex;
+      gap: 6px;
+      align-items: flex-end;
+      height: 40px;
+    }
+
+    .loader-wave span {
+      display: block;
+      width: 6px;
+      background: #7ec8e3;
+      border-radius: 3px;
+      animation: wave 1.2s ease-in-out infinite;
+    }
+
+    .loader-wave span:nth-child(1) { animation-delay: 0s;    height: 20px; }
+    .loader-wave span:nth-child(2) { animation-delay: 0.1s;  height: 32px; }
+    .loader-wave span:nth-child(3) { animation-delay: 0.2s;  height: 40px; }
+    .loader-wave span:nth-child(4) { animation-delay: 0.3s;  height: 28px; }
+    .loader-wave span:nth-child(5) { animation-delay: 0.4s;  height: 16px; }
+
+    @keyframes wave {
+      0%, 100% { transform: scaleY(0.5); opacity: 0.4; }
+      50%       { transform: scaleY(1);   opacity: 1;   }
+    }
+
+    #loading p {
+      font-size: 0.85rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #7ec8e3;
+      opacity: 0.6;
+    }
+
+    /* Leaflet label styling */
+    .waterbody-label {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      font-family: 'Georgia', serif;
+      font-size: 11px;
+      font-style: italic;
+      color: #1a3a5c;
+      text-shadow:
+        1px  1px 0 rgba(255,255,255,0.9),
+       -1px  1px 0 rgba(255,255,255,0.9),
+        1px -1px 0 rgba(255,255,255,0.9),
+       -1px -1px 0 rgba(255,255,255,0.9);
+      white-space: nowrap;
+      pointer-events: auto;
+      cursor: default;
+    }
+
+    /* Popup */
+    .leaflet-popup-content-wrapper {
+      background: #0d1b2a;
+      border: 1px solid #1e3a5f;
+      border-radius: 4px;
+      color: #e8f4f8;
+      font-family: 'Georgia', serif;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    .leaflet-popup-tip { background: #0d1b2a; }
+
+    .popup-name {
+      font-size: 1rem;
+      color: #7ec8e3;
+      margin-bottom: 4px;
+    }
+
+    .popup-type {
+      font-size: 0.75rem;
+      opacity: 0.55;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="loading">
+    <div class="loader-wave">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <p>Loading waterbodies…</p>
+  </div>
+
+  <header>
+    <h1>Danish Waterbodies <span>/</span> OSM</h1>
+    <div id="status">Fetching data…</div>
+  </header>
+
+  <div id="map"></div>
+
+  <script>
+    // ── Map setup ──────────────────────────────────────────────────────────────
+    const map = L.map("map", {
+      center: [56.0, 10.5],
+      zoom: 7,
+      zoomControl: true,
+    });
+
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png", {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 19,
+    }).addTo(map);
+
+    // ── Styles ─────────────────────────────────────────────────────────────────
+    function featureStyle(feature) {
+      const ww = feature?.properties?.waterway || "";
+      const nat = feature?.properties?.natural || "";
+
+      if (nat === "water" || ww === "lake" || ww === "reservoir") {
+        return { color: "#2a7db5", weight: 1, fillColor: "#4ba3d3", fillOpacity: 0.45 };
+      }
+      if (ww === "river") {
+        return { color: "#2a7db5", weight: 2.5, opacity: 0.85, fill: false };
+      }
+      // streams, canals, drains, etc.
+      return { color: "#5ab4d6", weight: 1.2, opacity: 0.7, fill: false };
+    }
+
+    // ── Name → layers index (all layers sharing the same name) ────────────────
+    const nameIndex = {};   // { "Gudenå": [layer, layer, ...], ... }
+
+    function highlightName(name) {
+      (nameIndex[name] || []).forEach((l) => {
+        l.setStyle({ color: "#e03030", fillColor: "#e03030", opacity: 1, fillOpacity: 0.6 });
+        l.bringToFront();
+      });
+    }
+
+    function unhighlightName(name) {
+      (nameIndex[name] || []).forEach((l) => {
+        l.setStyle(featureStyle(l.feature));
+      });
+    }
+
+    // ── Label: shown at zoom ≥ 10 ──────────────────────────────────────────────
+    const labelLayer = L.layerGroup().addTo(map);
+    const labeledNames = new Set();
+
+    function computeCentroid(feature) {
+      const g = feature.geometry;
+      if (!g) return null;
+
+      const flatten = (coords) => {
+        if (!Array.isArray(coords)) return [];
+        if (typeof coords[0] === "number") return [coords];
+        return coords.flatMap(flatten);
+      };
+
+      const pts = flatten(g.coordinates);
+      if (!pts.length) return null;
+
+      let minLon = Infinity, maxLon = -Infinity;
+      let minLat = Infinity, maxLat = -Infinity;
+      for (const [lon, lat] of pts) {
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+      const cLon = (minLon + maxLon) / 2;
+      const cLat = (minLat + maxLat) / 2;
+
+      // Nearest actual point to bbox center
+      let best = null, bestDist = Infinity;
+      for (const [lon, lat] of pts) {
+        const d = (lon - cLon) ** 2 + (lat - cLat) ** 2;
+        if (d < bestDist) { bestDist = d; best = [lat, lon]; }
+      }
+      return best;
+    }
+
+    function rebuildLabels(geojsonLayer) {
+      // Reset all highlighted layers before clearing labels
+      Object.keys(nameIndex).forEach((name) => unhighlightName(name));
+      labelLayer.clearLayers();
+      if (map.getZoom() < 10) return;
+
+      const bounds = map.getBounds();
+      geojsonLayer.eachLayer((layer) => {
+        const name = layer.feature?.properties?.name;
+        if (!name || labeledNames.has(name)) return;
+
+        const centroid = computeCentroid(layer.feature);
+        if (!centroid) return;
+
+        const ll = L.latLng(centroid[0], centroid[1]);
+        if (!bounds.contains(ll)) return;
+
+        labeledNames.add(name);
+        const labelMarker = L.marker(ll, {
+          icon: L.divIcon({
+            className: "waterbody-label",
+            html: name,
+            iconAnchor: [0, 0],
+          }),
+          interactive: true,
+        });
+        labelMarker.on("mouseover", () => highlightName(name));
+        labelMarker.on("mouseout",  () => unhighlightName(name));
+        labelMarker.addTo(labelLayer);
+      });
+    }
+
+    // ── Load GeoJSON ───────────────────────────────────────────────────────────
+    fetch("/api/waterbodies")
+      .then((r) => r.json())
+      .then((data) => {
+        const total = data.features?.length ?? 0;
+        document.getElementById("status").textContent =
+          `${total.toLocaleString()} features loaded`;
+
+        const geojsonLayer = L.geoJSON(data, {
+          style: featureStyle,
+          onEachFeature(feature, layer) {
+            const props = feature.properties || {};
+            if (props.name) {
+              // Register in name index for hover highlighting
+              if (!nameIndex[props.name]) nameIndex[props.name] = [];
+              nameIndex[props.name].push(layer);
+
+              layer.bindPopup(`
+                <div class="popup-name">${props.name}</div>
+                <div class="popup-type">${props.waterway || props.natural || "waterway"}</div>
+              `);
+
+              // Highlight on geometry hover too
+              layer.on("mouseover", () => highlightName(props.name));
+              layer.on("mouseout",  () => unhighlightName(props.name));
+            }
+          },
+        }).addTo(map);
+
+        // Fit map to data
+        try { map.fitBounds(geojsonLayer.getBounds(), { padding: [20, 20] }); }
+        catch (_) {}
+
+        // Labels on move/zoom
+        map.on("moveend zoomend", () => {
+          labeledNames.clear();
+          rebuildLabels(geojsonLayer);
+        });
+        rebuildLabels(geojsonLayer);
+
+        // Hide loader
+        const loader = document.getElementById("loading");
+        loader.classList.add("hidden");
+        setTimeout(() => loader.remove(), 700);
+      })
+      .catch((err) => {
+        document.getElementById("status").textContent = "Failed to load data";
+        document.getElementById("loading").querySelector("p").textContent =
+          "Error: " + err.message;
+        console.error(err);
+      });
+  </script>
+</body>
+</html>
