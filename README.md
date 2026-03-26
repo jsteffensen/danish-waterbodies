@@ -20,3 +20,13 @@ out skel qt;
 * Save as 'waterbodies_dk.geojson' (already in this repo)
 
 ![Stream Map](water_in_dk.png)
+
+## Run webserver
+
+```npm install```
+
+```node server.js```
+
+## Go to localhost:3000
+
+![Web Map](webui.png)
