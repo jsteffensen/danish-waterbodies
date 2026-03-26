@@ -19,8 +19,6 @@ out skel qt;
 * Export as geojson
 * Save as 'waterbodies_dk.geojson' (already in this repo)
 
-![Stream Map](water_in_dk.png)
-
 ## Run webserver
 
 ```npm install```
@@ -30,3 +28,7 @@ out skel qt;
 ## Go to localhost:3000
 
 ![Web Map](webui.png)
+
+ctrl+f to search for a name.
+
+Hover mouse on labels to highlight waterbody.
